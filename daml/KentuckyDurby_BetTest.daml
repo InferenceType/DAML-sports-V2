@@ -1,0 +1,164 @@
+module KentuckyDurby_BetTest where 
+
+
+import Daml.Script
+import BettingAccount 
+import Cash 
+import Bet
+import Event 
+
+import qualified DA.Set as Set
+import DA.Time (time)
+import DA.Date (Month(Jun), date)
+
+-- Test Parties to use in Test Scripts below..
+data TestParties = TestParties with 
+  alice : Party 
+  bob : Party 
+  bank : Party 
+  bookie : Party
+  charlie : Party
+
+setupParties: Script TestParties 
+setupParties = do 
+  alice   <- allocateParty "Alice"
+  bank    <- allocateParty "Bank"
+  bob     <- allocateParty "Bob"
+  bookie  <- allocateParty "Bookie"
+  charlie <- allocateParty "Charlie"  
+  return $ TestParties with .. 
+
+testDupBettingAccounts : Script ()
+testDupBettingAccounts = do 
+  tP@TestParties{..} <- setupParties
+
+  -- aliceBettingAcct <- submitMulti[alice, bookie][] do createCmd BettingAccount with owner = alice; issuer = bookie; username = "alice101betting"
+  -- submitMultiMustFail[alice,  bookie][] do createCmd BettingAccount with owner = alice; issuer = bookie; username = "alice101betting"
+  -- submitMultiMustFail[bob,    bookie][] do createCmd BettingAccount with owner = alice; issuer = bookie; username = "alice101betting"
+  -- submitMultiMustFail[bookie, bookie][] do createCmd BettingAccount with owner = alice; issuer = bookie; username = "alice101betting"
+  -- submitMultiMustFail[bank,   bookie][] do createCmd BettingAccount with owner = alice; issuer = bookie; username = "alice101betting"
+  
+  return ()
+
+-- Test Scripts -- 
+-- Test Accept Choices
+testFullWorkFlow : Script ()
+testFullWorkFlow =  do 
+  tP@TestParties{..} <- setupParties
+  
+  let
+    -- Setup CashType
+    usd = CashType with issuer = bank; denomination = "usd"
+    -- Setup time simulations for ledger time configuration
+    eventDate = date 2023 Jun 04
+    eventTime = time eventDate 13 00 00
+    currentDate = date 2023 Jun 03
+    currentDateTime = time currentDate 13 00 00
+    payoutDate = date 2023 Jun 05
+    payoutDateTime = time payoutDate 13 00 00 
+
+    -- Setup the events for bets 
+    kDurbyRace1 = EventRecord with eventName = "Kentucky Derby";   participants = ["Sun Thunder", "Mage", "Skinner", "Hit Show"]; predictions = [("Sun Thunder", 2.21), ("Mage", 1.02), ("Skinner", 4.1), ("Hit Show", 1.1)]; eventStartTime = eventTime; eventDate = eventDate
+
+    moneyline_MLB = EventRecord with eventName = "Yankees vs. Mets";   participants = ["Yankees", "Mets"]; predictions = [("Yankees", 2.21), ("Mets", 1.02)]; eventStartTime = eventTime; eventDate = eventDate
+    moneyline_NHL = EventRecord with eventName = "Rangers vs. Devils"; participants = ["Rangers", "Devils"]; predictions = [("Rangers", 1.14), ("Devils", 1.02)]; eventStartTime = eventTime; eventDate = eventDate 
+
+  
+  setTime currentDateTime 
+
+
+  -- Setup Cash 
+  aliceCash  <- submitMulti[alice,  bank][] do createCmd Cash with amount = 200.00;  owner = alice;  cashType = usd; observers = Set.empty-- ; issuer = bank
+  bookieCash <- submitMulti[bookie, bank][] do createCmd Cash with amount = 2000.00; owner = bookie; cashType = usd; observers = Set.empty-- ; issuer = bank
+  bobCash    <- submitMulti[bob,    bank][] do createCmd Cash with amount = 200.00;  owner = bob;    cashType = usd; observers = Set.empty-- ; issuer = bank
+  charlieCash    <- submitMulti[charlie,    bank][] do createCmd Cash with amount = 200.00;  owner = charlie;    cashType = usd; observers = Set.empty-- ; issuer = bank
+
+
+  -- Setup CashHoldingAccounts 
+  bookieCashHoldingAcct <- submitMulti[bookie, bank][] do createCmd CashHoldingAccount with owner = bookie; issuer = bank; cashType = usd
+  aliceCashHoldingAcct  <- submitMulti[alice,  bank][] do createCmd CashHoldingAccount with owner = alice;  issuer = bank; cashType = usd  
+  bobCashHoldingAcct    <- submitMulti[bob,    bank][] do createCmd CashHoldingAccount with owner = bob;    issuer = bank; cashType = usd
+  charlieCashHoldingAcct    <- submitMulti[charlie,    bank][] do createCmd CashHoldingAccount with owner = charlie;    issuer = bank; cashType = usd
+
+  -- Setup Betting accounts for Alice, Bob, and Bookie
+  bookieBettingAcct <- submitMulti[bookie, bookie][] do createCmd BettingAccount with owner = bookie; issuer = bookie ; username = "bookieBet"
+  aliceBettingAcct  <- submitMulti[alice,  bookie][] do createCmd BettingAccount with owner = alice;  issuer = bookie; username = "aliceBet"
+  bobBettingAcct    <- submitMulti[bob,    bookie][] do createCmd BettingAccount with owner = bob;    issuer = bookie ; username = "bobBet"
+  charlieBettingAcct    <- submitMulti[charlie,    bookie][] do createCmd BettingAccount with owner = charlie;    issuer = bookie ; username = "charlieBet"
+
+
+  
+  -- Setup an event by using the bookie to create this event
+  kDurbyRace1Cid <- submit bookie do exerciseCmd bookieBettingAcct CreateEvent with event = kDurbyRace1
+
+  -- Enable betting on events | UpdateGamblers 
+  kDurbyRace1Cid <- submit bookie do exerciseCmd kDurbyRace1Cid UpdateGamblers with newGamblers = [alice, bob, charlie] 
+
+  --compiling  contracts
+  bookieTotal <- query @Cash bookie 
+  let (bookieCashIds, _) = unzip bookieTotal
+
+  aliceTotal <- query @Cash alice 
+  let (aliceCashIds, _) = unzip aliceTotal
+
+  bobTotal <- query @Cash bob 
+  let (bobCashIds, _) = unzip bobTotal
+
+  charlieTotal <- query @Cash charlie
+  let (charlieCashIds, _) = unzip charlieTotal
+
+  
+  -- Create bets
+  aliceBetOnkDurbyRace1Cid <- submit alice do exerciseCmd aliceBettingAcct CreateBet with wager = 20.00; event = kDurbyRace1Cid; predictedWinner = "Sun Thunder"; cashIds = aliceCashIds; cashHoldingAccount = aliceCashHoldingAcct
+  bobBetOnkDurbyRace1Cid   <- submit bob   do exerciseCmd bobBettingAcct   CreateBet with wager = 101.00; event = kDurbyRace1Cid; predictedWinner = "Mage"; cashIds = bobCashIds; cashHoldingAccount = bobCashHoldingAcct
+  charlieBetOnkDurbyRace1Cid   <- submit charlie   do exerciseCmd charlieBettingAcct   CreateBet with wager = 120.00; event = kDurbyRace1Cid; predictedWinner = "Sun Thunder"; cashIds = charlieCashIds; cashHoldingAccount = charlieCashHoldingAcct
+
+
+
+  -- -- Charlie Cancels his own bet proposal ; proposes again with different participant
+  charlieCancelBetkDurbyRace1Cid <- submit charlie do exerciseCmd charlieBetOnkDurbyRace1Cid   CancelBetProposal 
+
+  charlieTotal2 <- query @Cash charlie
+  let (charlieCashIds, _) = unzip charlieTotal2
+  charlieBetOnkDurbyRace2Cid   <- submit charlie   do exerciseCmd charlieBettingAcct   CreateBet with wager = 120.00; event = kDurbyRace1Cid; predictedWinner = "Mage"; cashIds = charlieCashIds; cashHoldingAccount = charlieCashHoldingAcct
+
+
+
+-- -- -- Bookie settles all bets -- -- --
+ --Sets dynamic time 
+  setTime payoutDateTime
+
+  -- -- Bookie Accepts the bet proposals from Alice & new Charlie
+  bookieAcceptsAliceBetOnkDurbyRaceCid <- submit bookie do exerciseCmd aliceBetOnkDurbyRace1Cid AcceptBetProposal --w
+  bookieAcceptsCharlieBetOnkDurbyRaceCid <- submit bookie do exerciseCmd charlieBetOnkDurbyRace2Cid AcceptBetProposal --l
+
+  -- -- Bookie Rejects the bet proposals from Bob (bob is blacklisted)
+  bookieRejectsBobBetOnkDurbyRace1Cid   <- submit bookie do exerciseCmd bobBetOnkDurbyRace1Cid   RejectBetProposal
+  
+
+ 
+  aliceSettledBet <- submit bookie do exerciseCmd bookieBettingAcct SettleBet with bet = bookieAcceptsAliceBetOnkDurbyRaceCid; winningParticipant = "Sun Thunder"; cashIds = bookieCashIds, cashHoldingAccountId = bookieCashHoldingAcct
+  
+  
+  
+  bookieTotal2 <- query @Cash bookie 
+  let (bookieCash2Ids, _) = unzip bookieTotal2
+
+  charlieSettledBet <- submit bookie do exerciseCmd bookieBettingAcct SettleBet with bet = bookieAcceptsCharlieBetOnkDurbyRaceCid; winningParticipant = "Sun Thunder"; cashIds = bookieCash2Ids, cashHoldingAccountId = bookieCashHoldingAcct
+  
+  
+  
+  aliceAcceptsWin <- submit alice do exerciseCmd aliceSettledBet Accept_Transfer
+  bookieAcceptsWin <- submit bookie do exerciseCmd charlieSettledBet Accept_Transfer
+
+-- Ensure predictedWinner is part of event !!!test
+        -- assertMsg "The Participant that you have chosen to win is not part of this event. Please select an eligible participant." $ 
+
+
+  
+
+  return ()
+
+
+
+
