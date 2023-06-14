@@ -1,0 +1,54 @@
+module Bet where 
+
+import Event 
+import Cash 
+
+-- BetSlip Data Record
+data BetSlip = BetSlip with 
+    wager : Numeric 2 
+  deriving (Eq, Show)
+
+-- | A bet is a pair of an event and the amount to be won.
+
+template BetProposal 
+  with 
+    betAgreement : BetProposalAgreement
+    cashTransferCid : ContractId CashTransfer
+  where 
+    signatory betAgreement.owner
+    observer betAgreement.betReceiver  
+
+    choice AcceptBetProposal : ContractId BetProposalAgreement
+      controller betAgreement.betReceiver 
+      do
+        -- Create betAgreement, bookie gets cash transfer
+        exercise cashTransferCid Accept_Transfer
+        create betAgreement
+    
+    choice RejectBetProposal : ()
+      controller betAgreement.betReceiver
+      do 
+        -- Return money to bet owner's cash acct. 
+        exercise cashTransferCid Reject_Transfer
+        return ()
+
+    choice CancelBetProposal : ()
+      controller betAgreement.owner 
+      do
+        -- Return money to bet owner's cash acct. 
+        exercise cashTransferCid Cancel_Transfer 
+        return () 
+
+
+template BetProposalAgreement 
+  with
+    owner : Party 
+    betReceiver : Party
+    event : ContractId Event 
+    timestamp : Time 
+    -- event : EventRecord
+    betType : BetSlip   
+    participantToWin : Text  
+    -- cashIds : [ContractId Cash]
+  where 
+    signatory owner, betReceiver 

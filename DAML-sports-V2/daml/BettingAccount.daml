@@ -1,0 +1,168 @@
+module BettingAccount where
+
+import Cash
+import Bet
+import Event 
+import DA.Action (foldlA)
+import DA.List ((!!), elemIndex)
+import DA.Optional (fromSome)
+import DA.Date (toDateUTC)
+
+
+validateTxInputs: [ContractId Cash] -> ContractId CashHoldingAccount -> Numeric 2 -> Update (Numeric 2)
+validateTxInputs cidCashList cidBettingAccount amount = do
+  bettingAccount <- fetch cidBettingAccount
+  total <- foldlA
+    (\current cidCash -> (getAmount current cidCash bettingAccount))
+    0.00
+    cidCashList
+  assertMsg "Insufficient funds" (total >= amount)
+  return total
+
+getAmount: Numeric 2 -> ContractId Cash -> CashHoldingAccount -> Update (Numeric 2)
+getAmount current cidCash bettingAccount = do
+  cash <- fetch cidCash
+  assertMsg "Cash owner does not match the account owner" (cash.owner == bettingAccount.owner)
+  return (current + cash.amount)
+
+caseCheckBet: Text -> Text -> Party -> Numeric 2 -> [ContractId Cash] -> ContractId CashHoldingAccount -> Numeric 2 -> Party ->  Update (ContractId CashTransfer)
+caseCheckBet winningParticipant wageredParticipant betRecipient payoutAmt cashIds cha cashBalance bookie = do 
+  if (winningParticipant == wageredParticipant) then do  
+    exercise cha CreateTransfer with
+      recipient = betRecipient
+      amount = payoutAmt 
+      cashIds
+      .. 
+  else do 
+    exercise cha CreateTransfer with 
+      recipient = bookie
+      amount = 0.00 
+      cashIds
+      .. 
+    
+
+
+template BettingAccount 
+  with 
+    owner : Party
+    issuer : Party
+    username : Text
+  where 
+    signatory owner, issuer
+    key (owner, issuer, username) : (Party, Party, Text)
+    maintainer key._1
+
+    -- Create a Bet Proposal (Initiate the Propose/Accept Pattern for placing a bet..)
+    nonconsuming choice CreateBet : ContractId BetProposal 
+      with
+        wager : Numeric 2 
+        cashIds : [ContractId Cash]
+        event : ContractId Event 
+        predictedWinner : Text
+        cashHoldingAccount : ContractId CashHoldingAccount
+      controller owner
+      do 
+        let betType = BetSlip with ..
+        -- Fetch event payload and get participants to ensure predictedWinner is partaking in the event
+        eventPayload <- fetch event
+        currentTime <- getTime
+        -- Ensure currentTime < eventStartTime & currentDate <= eventDate 
+        assertMsg "The time to place a bet on this event is closed because the event has started. Please review your bet." $ 
+          (currentTime < eventPayload.eventRecord.eventStartTime) 
+        -- Ensure predictedWinner is part of event 
+        assertMsg "The Participant that you have chosen to win is not part of this event. Please select an eligible participant." $ 
+          (predictedWinner `elem` (DA.Internal.Record.getField @"participants" eventPayload.eventRecord))
+        cashBalance <- validateTxInputs cashIds cashHoldingAccount $ wager
+        cashTransferCid <- exercise cashHoldingAccount CreateTransfer with 
+          recipient = issuer 
+          amount = wager 
+          cashIds
+          ..
+        create BetProposal
+          with
+            cashTransferCid = cashTransferCid
+            betAgreement = BetProposalAgreement with
+              owner 
+              event
+              betType  
+              betReceiver = issuer
+              participantToWin = predictedWinner
+              timestamp = currentTime
+
+
+    nonconsuming choice SettleBet : ContractId CashTransfer
+      with 
+        bet : ContractId BetProposalAgreement
+        winningParticipant : Text 
+        cashIds : [ContractId Cash]
+        cashHoldingAccountId : ContractId CashHoldingAccount -- Bookie's Cashholding account
+      controller issuer --bookie
+        do
+          betPayload <- fetch bet
+          
+          -- archive bet 
+          -- betPayload <- exercise self ArchiveBet with bet
+          
+          eventPayload <- fetch betPayload.event
+          currentTime <- getTime
+
+          let 
+            nowDate = toDateUTC currentTime
+            -- the below creates the following: (["Giants", "Jets"], [0.25, 1.13]) 
+            (evtParticipants, evtParticipantOdds) = unzip eventPayload.eventRecord.predictions
+            -- Get the index of the winning participant to use it to index into the evtParticipantOdds list
+            winningParticipantIndex =  elemIndex winningParticipant evtParticipants
+            -- Get the odds of the winning participant to determine payoutRate              
+            -- Change the below to FromSomeNote for production-like environment to generate an error message for the bookie
+            wpi = (fromSome) winningParticipantIndex
+            payoutRate = (!!) evtParticipantOdds wpi
+            -- Get the payout amt
+            payoutAmt  = betPayload.betType.wager * payoutRate
+          
+          assertMsg "Payout phase must occur at least one day following the event. Please check back..." $ 
+            (nowDate > eventPayload.eventRecord.eventDate)
+
+          -- Create Cash transfer from bookie to gambler who has won the bet
+          cashBalance <- validateTxInputs cashIds cashHoldingAccountId $ payoutAmt
+          caseCheckBet winningParticipant betPayload.participantToWin betPayload.owner payoutAmt cashIds cashHoldingAccountId cashBalance owner
+
+    nonconsuming choice CreateEvent : ContractId Event 
+      with
+        event : EventRecord
+      controller issuer 
+      do 
+      -- fetch all active betting accounts and update gambler's list with the betting accounts
+        newEventCid <- create Event with 
+          bookie = issuer 
+          gamblers = []
+          eventRecord = event
+          ..
+        return(newEventCid)
+
+
+    -- nonconsuming choice ArchiveBet : BetProposalAgreement
+    --   with 
+    --     bet : ContractId BetProposalAgreement
+    --   controller owner, issuer
+    --     do 
+    --       betPayload <- fetch bet 
+    --       archive bet 
+    --       return(betPayload) 
+      
+        
+-- template Settlement with 
+  -- Model it 
+    -- 1. create event to bet on (horse race with 10 horse and publishes those odds)
+          -- stores names of horses and their respective odds
+          -- bookie is signatory of this contract
+          -- gamblers will be the observers
+          -- 
+    -- 2. 1 bookie that can run all the bets and settles them
+    -- 3. When the winner is known (i.e., event is finished) 
+    -- 4. Loop through all bets that are finished and settle
+
+
+
+
+
+

@@ -1,0 +1,45 @@
+module Event where 
+
+
+-- data Outcome = Outcome with
+--     event: Event
+--     eventOccurs: Bool
+--       deriving (Eq, Show)
+
+-- type EventKey =  ([(Text, Numeric 2)], Party)
+type EventKey =  (EventRecord, Party)
+
+data EventRecord = EventRecord with 
+    eventName : Text 
+    participants : [Text]
+    predictions : [(Text, Numeric 2)]
+    eventStartTime : Time -- UTC time (+4hrs)
+    eventDate : Date   
+  deriving (Eq, Show, Ord)
+
+
+template Event 
+  with 
+    eventRecord : EventRecord
+    bookie : Party
+    gamblers : [Party] --bettingAccount.owner 
+    -- resolutionDate : Date 
+  where 
+    signatory bookie
+    observer gamblers 
+    key (eventRecord, bookie) : EventKey
+    maintainer key._2
+
+    choice UpdateGamblers : ContractId Event  
+      with  
+        newGamblers : [Party]
+      controller bookie 
+      do
+        let gmbls = gamblers ++ newGamblers 
+        create this with gamblers = gmbls 
+
+
+    -- choice UpdateEventRecord : ContractId Event
+    -- i.e., potential rain delays can prolong a start date on a game, or other natural disasters. 
+    
+

@@ -1,0 +1,101 @@
+module Setup where
+
+import Daml.Script
+import BettingAccount
+import Cash 
+import qualified DA.Set as Set
+
+
+-- Main : setup 
+setup : Script () 
+setup = do
+
+  -- User_setup_begin
+  alice   <- allocatePartyWithHint "Alice" (PartyIdHint "Alice")
+  bob     <- allocatePartyWithHint "Bob" (PartyIdHint "Bob")
+  bank    <- allocatePartyWithHint "Bank" (PartyIdHint "Bank")
+  bookie  <- allocatePartyWithHint "Bookie" (PartyIdHint "Bookie")
+  charlie <- allocatePartyWithHint "Charlie" (PartyIdHint "Charlie")
+
+  aliceId   <- validateUserId "alice"
+  bobId     <- validateUserId "bob"
+  bankId    <- validateUserId "bank"
+  bookieId  <- validateUserId "bookie"
+  charlieId <- validateUserId "charlie"
+  
+  createUser (User aliceId (Some alice)) [CanActAs alice]
+  createUser (User bobId (Some bob)) [CanActAs bob]
+  createUser (User bankId (Some bank)) [CanActAs bank]
+  createUser (User bookieId (Some bookie)) [CanActAs bookie]
+
+  let cashType = CashType with issuer = bank; denomination = "usd"
+
+  -- Setup CashHoldingAccounts
+  aliceCashHoldingAcct   <- submitMulti[alice,   bank][] do createCmd CashHoldingAccount with owner = alice;   issuer = bank; cashType 
+  bookieCashHoldingAcct  <- submitMulti[bookie,  bank][] do createCmd CashHoldingAccount with owner = bookie;  issuer = bank; cashType 
+  bobCashHoldingAcct     <- submitMulti[bob,     bank][] do createCmd CashHoldingAccount with owner = bob;     issuer = bank; cashType
+  charlieCashHoldingAcct <- submitMulti[charlie, bank][] do createCmd CashHoldingAccount with owner = charlie; issuer = bank; cashType
+
+  -- Setup Betting Accounts 
+  aliceBettingAcct       <- submitMulti[alice,   bookie][] do createCmd BettingAccount with owner = alice;   issuer = bookie; username = "aliceBet"
+  bookieBettingAcct      <- submitMulti[bookie,  bookie][] do createCmd BettingAccount with owner = bookie;  issuer = bookie; username = "bookieBet"
+  bobBettingAcct         <- submitMulti[bob,     bookie][] do createCmd BettingAccount with owner = bob;     issuer = bookie; username = "bobBet"
+  charlieBettingAcct     <- submitMulti[charlie, bookie][] do createCmd BettingAccount with owner = charlie; issuer = bookie; username = "charlieBet"
+  
+  -- Setup Gambling Balances
+  aliceGamblingBalance   <- submitMulti[alice,    bank][] do createCmd Cash with cashType; amount = 500.00 ;   owner = alice;   observers = Set.empty 
+  bookieGamblingBalance  <- submitMulti[bookie,   bank][] do createCmd Cash with cashType; amount = 100000.00; owner = bookie;  observers = Set.empty
+  bobGamblingBalance     <- submitMulti[bob,      bank][] do createCmd Cash with cashType; amount = 500.00;    owner = bob;     observers = Set.empty
+  charlieGabmlingBalance <- submitMulti[charlie,  bank][] do createCmd Cash with cashType; amount = 500.00;    owner = charlie; observers = Set.empty 
+
+  return ()
+
+  
+-- | Create a public party, then create three test users.
+
+-- -- | Create the public party.
+-- createPublic : Optional ParticipantName -> Script Party
+-- createPublic participantName = do
+--   publicUser <- getOrCreateUser "Public" None participantName
+--   pure $ getPrimaryParty publicUser
+
+
+-- -- | Get a user by their id. If the user doesn't exist, it is created.
+-- getOrCreateUser : Text -> Optional Party -> Optional ParticipantName -> Script User
+-- getOrCreateUser alias publicM participantNameM = do
+--   userId <- validateUserId $ toUserId alias
+--   try
+--     getUser_ userId participantNameM
+--   catch
+--     UserNotFound _ -> do
+--       p <- allocateParty_ alias participantNameM
+--       let u = User userId (Some p)
+--       let rights  = CanActAs p :: [CanReadAs public | Some public <- [publicM]]
+--       createUser_ u rights participantNameM
+--       pure u
+
+-- getUser_ : UserId -> Optional ParticipantName -> Script User
+-- getUser_  userId participantNameM = do
+--   case participantNameM of
+--     Some participantName -> getUserOn userId participantName
+--     None -> getUser userId
+
+-- allocateParty_ : Text -> Optional ParticipantName -> Script Party
+-- allocateParty_ alias participantNameM = do
+--   case participantNameM of
+--     Some participantName -> allocatePartyOn alias participantName
+--     None -> allocateParty alias
+
+-- createUser_ : User -> [UserRight] ->  Optional ParticipantName -> Script ()
+-- createUser_ user rights participantNameM = do
+--   case participantNameM of
+--     Some participantName -> createUserOn user rights participantName
+--     None -> createUser user rights
+
+-- -- | Convert a text to a valid user id.
+-- toUserId : Text -> Text
+-- toUserId = T.asciiToLower
+
+-- -- | Try to get the primary party of a user and fail if the user has no associated primary party.
+-- getPrimaryParty : User -> Party
+-- getPrimaryParty u = fromSomeNote ("User " <> userIdToText u.userId <> " is missing a primary party.") u.primaryParty

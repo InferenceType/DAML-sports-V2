@@ -1,0 +1,116 @@
+module Cash where 
+
+--import DA.Action (foldlA)
+import DA.Foldable (mapA_)
+import qualified DA.Set as Set
+import DA.Set (Set)
+-- import DA.List (head)
+
+-- CashType Data Record
+data CashType = CashType with 
+    issuer : Party
+    denomination : Text
+  deriving (Eq, Show, Ord)
+
+
+template CashHoldingAccount 
+  with 
+    owner : Party
+    issuer : Party --bank 
+    cashType : CashType
+  where 
+    signatory owner, cashType.issuer
+
+    key (cashType, owner) : (CashType, Party)
+    maintainer key._1.issuer 
+    
+  
+    nonconsuming choice Merge_Split : ContractId Cash
+      with 
+        desiredAmount : Numeric 2
+        cashIds : [ContractId Cash]
+        cashBalance : Numeric 2
+      controller owner 
+      do 
+        -- cashBalance <- validateTxInputs cashIds self $ desiredAmount
+        mapA_ archive cashIds
+
+        -- Account Balance Cash:
+        create Cash with
+          amount = cashBalance - desiredAmount
+          observers = Set.empty
+          ..
+        
+        -- Wager Cash to be archived: 
+        create Cash with
+          amount = desiredAmount
+          observers = Set.empty
+          ..
+        
+
+    nonconsuming choice CreateTransfer : ContractId CashTransfer --only to bookieholding account 
+      with                                                        --no one else needs to be transfered to 
+        recipient : Party
+        amount : Numeric 2 
+        cashIds : [ContractId Cash]
+        cashBalance : Numeric 2
+      controller owner 
+      do 
+        cashCid <- exercise self Merge_Split with 
+          desiredAmount = amount
+          ..
+    
+        cash <- fetch cashCid
+        archive cashCid 
+        create CashTransfer with 
+          observers = Set.empty
+          ..
+
+
+-- Cash Template/Contract:
+-- The Cash Template/Contract will represent the money and owner of money 
+-- for Betting transactions. 
+template Cash with 
+    owner : Party 
+    cashType : CashType
+    amount : Numeric 2
+    observers : Set Party
+  where 
+    signatory owner, cashType.issuer
+    observer observers 
+    -- choice CreateCashTransferRequest : ContractId CashTransfer 
+    --   with 
+    --     recipient : Party 
+    --     amount : Numeric 2
+    --     cash : Cash
+    --   controller owner 
+    --   do 
+    --     create CashTransfer with .. 
+
+template CashTransfer 
+  with 
+    cash : Cash 
+    recipient : Party
+    amount : Numeric 2 
+    observers : Set Party 
+  where 
+    signatory (signatory cash)
+    observer recipient 
+
+    choice Cancel_Transfer :  ContractId Cash
+      controller cash.owner
+      do 
+        create cash 
+    
+    choice Reject_Transfer : ContractId Cash 
+      controller recipient 
+      do 
+        create cash 
+    
+    choice Accept_Transfer : ContractId Cash 
+      controller recipient
+      do 
+        create cash with 
+          owner = recipient 
+          observers = Set.empty
+          amount
