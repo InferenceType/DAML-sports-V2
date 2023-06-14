@@ -36,6 +36,49 @@ testDupAccounts = do
 
   return ()
 
+
+-- --Test Mismatched Denomination Fail
+-- testDenomination : Script ()
+-- testDenomination = do 
+--   tP@TestParties{..} <- setupParties
+  
+--   let usd = CashType with issuer = bank; denomination = "usd"
+--   let euro = CashType with issuer = bank; denomination = "euro"
+
+--   --initilize cash
+--   aliceCash <- submitMulti[alice,   bank] [] do createCmd Cash with owner = alice  ; cashType = usd; amount = 100.00; observers = Set.empty 
+--   bobCash <- submitMulti[bob,   bank] [] do createCmd Cash with owner = bob  ; cashType = euro; amount = 100.00; observers = Set.empty 
+--   bookieCash <- submitMulti [bookie, bank] [] do createCmd Cash with owner = bookie; cashType = euro; amount = 1000.0; observers = Set.empty 
+
+-- --setup cash holding accounts
+--   aliceCashHoldingAcct <-  submitMulti[alice,   bank] [] do createCmd CashHoldingAccount with owner = alice; issuer = bank; cashType = usd 
+--   bobCashHoldingAcct <-  submitMulti[bob,   bank] [] do createCmd CashHoldingAccount with owner = bob; issuer = bank; cashType = euro
+--   bookieCashHoldingAcct <-  submitMulti[bookie,   bank] []  do createCmd CashHoldingAccount with owner = bookie; issuer = bank; cashType = euro
+
+--   --mismatch denomination test case
+
+--   aliceCashTransferCid <- submitMustFail alice do 
+--     exerciseCmd aliceCashHoldingAcct CreateTransfer with 
+--       recipient = bookie
+--       amount = 50.00
+--       cashIds = [aliceCash]
+--       cashBalance = 100.0
+
+--   -- Bookie accepts Alice's transfer of $50 
+--   -- bookieAcceptsCashCid <- submit bookie do 
+--   --   exerciseCmd aliceCashTransferCid Accept_Transfer
+
+--   -- -- Bookie creates CashTransfer of $45 for Alice
+--   -- bookieTransferCashCid <- submit bookie do 
+--   --   exerciseCmd bookieCashHoldingAcct CreateTransfer with 
+--   --     amount = 45.00 
+--   --     recipient = alice 
+--   --     cashIds = [bookieAcceptsCashCid, bookieCash]
+--   --     cashBalance = 1050.0
+
+
+--   return ()
+
 -- Test Scripts -- 
 -- Test Accept Choices
 testCashTransfers : Script ()
@@ -124,4 +167,16 @@ testCashTransfers =  do
 
 
   return()
+
+
+
+
+
+
+
+
+
+
+
+
 
