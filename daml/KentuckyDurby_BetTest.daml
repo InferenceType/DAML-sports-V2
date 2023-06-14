@@ -114,6 +114,9 @@ testFullWorkFlow =  do
   charlieBetOnkDurbyRace1Cid   <- submit charlie   do exerciseCmd charlieBettingAcct   CreateBet with wager = 120.00; event = kDurbyRace1Cid; predictedWinner = "Sun Thunder"; cashIds = charlieCashIds; cashHoldingAccount = charlieCashHoldingAcct
 
 
+-- Ensure predictedWinner is part of event !!!test
+  -- aliceParticipantNotExist <- submit alice do exerciseCmd aliceBettingAcct CreateBet with wager = 20.0; event = kDurbyRace1Cid; predictedWinner = "alice"; cashIds = aliceCashIds; cashHoldingAccount = aliceCashHoldingAcct
+
 
   -- -- Charlie Cancels his own bet proposal ; proposes again with different participant
   charlieCancelBetkDurbyRace1Cid <- submit charlie do exerciseCmd charlieBetOnkDurbyRace1Cid   CancelBetProposal 
@@ -151,8 +154,7 @@ testFullWorkFlow =  do
   aliceAcceptsWin <- submit alice do exerciseCmd aliceSettledBet Accept_Transfer
   bookieAcceptsWin <- submit bookie do exerciseCmd charlieSettledBet Accept_Transfer
 
--- Ensure predictedWinner is part of event !!!test
-        -- assertMsg "The Participant that you have chosen to win is not part of this event. Please select an eligible participant." $ 
+        
 
 
   
