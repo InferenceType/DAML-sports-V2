@@ -1,0 +1,127 @@
+module TestCash where 
+
+import Cash 
+-- import BettingAccount
+import Daml.Script 
+import qualified DA.Set as Set
+
+
+data TestParties = TestParties with 
+  alice : Party 
+  bob : Party 
+  bank : Party 
+  bookie : Party
+  charlie : Party
+
+setupParties: Script TestParties 
+setupParties = do 
+  alice   <- allocateParty "Alice"
+  bank    <- allocateParty "Bank"
+  bob     <- allocateParty "Bob"
+  bookie  <- allocateParty "Bookie"
+  charlie <- allocateParty "Charlie"  
+  return $ TestParties with .. 
+
+testDupAccounts : Script ()
+testDupAccounts = do 
+  tP@TestParties{..} <- setupParties
+  
+  let usd = CashType with issuer = bank; denomination = "usd"
+
+  aliceCashHoldingAcct <-  submitMulti[alice,   bank] [] do createCmd CashHoldingAccount with owner = alice; issuer = bank; cashType = usd -- cashCids = [aliceCash] -- cashContractRef = aliceCash
+  
+  submitMultiMustFail[alice,   bank][] do createCmd CashHoldingAccount with owner = alice; issuer = bank; cashType = usd
+  submitMultiMustFail[bank,    bank][] do createCmd CashHoldingAccount with owner = alice; issuer = bank; cashType = usd
+  submitMultiMustFail[charlie, bank][] do createCmd CashHoldingAccount with owner = alice; issuer = bank; cashType = usd
+
+  return ()
+
+-- Test Scripts -- 
+-- Test Accept Choices
+testCashTransfers : Script ()
+testCashTransfers =  do 
+  tP@TestParties{..} <- setupParties
+
+  let usd = CashType with issuer = bank; denomination = "usd"
+
+  --initilize cash
+  aliceCash <- submitMulti[alice,   bank] [] do createCmd Cash with owner = alice  ; cashType = usd; amount = 100.00; observers = Set.empty -- issuer = bank
+  bobCash <- submitMulti[bob,   bank] [] do createCmd Cash with owner = bob  ; cashType = usd; amount = 100.00; observers = Set.empty -- issuer = bank
+  bookieCash <- submitMulti [bookie, bank] [] do createCmd Cash with owner = bookie; cashType = usd; amount = 1000.0; observers = Set.empty -- issuer = bank
+
+--setup cash holding accounts
+  aliceCashHoldingAcct <-  submitMulti[alice,   bank] [] do createCmd CashHoldingAccount with owner = alice; issuer = bank; cashType = usd -- cashCids = [aliceCash] -- cashContractRef = aliceCash
+  bobCashHoldingAcct <-  submitMulti[bob,   bank] [] do createCmd CashHoldingAccount with owner = bob; issuer = bank; cashType = usd -- cashCids = [bobCash] -- cashContractRef = bobCash
+  bookieCashHoldingAcct <-  submitMulti[bookie,   bank] []  do createCmd CashHoldingAccount with owner = bookie; issuer = bank; cashType = usd -- cashCids = [bookieCash] --  cashContractRef = bookieCash
+
+--setup betting accounts
+  -- aliceBettingAcctCid   <- submitMulti[alice,   bookie] [] do createCmd BettingAccount with owner = alice; cashCids = [aliceCashHoldingAcct]; issuer = bookie
+  -- bobBettingAcctCid     <- submitMulti[bob,     bookie] [] do createCmd BettingAccount with owner = bob;   cashCids = [bobCashHoldingAcct];  issuer = bookie
+  -- bookieBettingAcctCid  <- submitMulti[bob,     bookie] [] do  createCmd BettingAccount with owner = bookie;   cashCids = [bobCashHoldingAcct];  issuer = bookie
+
+-------------------------------------------------------------------------------
+  -- Test Accept Transfer
+  -- Alice creates CashTransfer of $50 for bookie
+  aliceCashTransferCid <- submit alice do 
+    exerciseCmd aliceCashHoldingAcct CreateTransfer with 
+      recipient = bookie
+      amount = 50.00
+      cashIds = [aliceCash]
+      cashBalance = 100.0
+
+  -- Bookie accepts Alice's transfer of $50 
+  bookieAcceptsCashCid <- submit bookie do 
+    exerciseCmd aliceCashTransferCid Accept_Transfer
+
+  -- Bookie creates CashTransfer of $45 for Alice
+  bookieTransferCashCid <- submit bookie do 
+    exerciseCmd bookieCashHoldingAcct CreateTransfer with 
+      amount = 45.00 
+      recipient = alice 
+      cashIds = [bookieAcceptsCashCid, bookieCash]
+      cashBalance = 1050.0
+  
+  -- Bookie cancels the previous CashTransfer of $45 for Alice
+  -- bookieCancelBookieTransferCashCid <- submit bookie do 
+  --   exerciseCmd bookieTransferCashCid Cancel_Transfer
+
+  -- -- Bookie creates CashTransfer of $75 for Bob
+  -- bookieTransferToBobCashCid <- submit bookie do 
+  --   exerciseCmd bookieCashHoldingAcct CreateTransfer with 
+  --     recipient = bob 
+  --     amount = 40.00
+  --     cashIds = [bookieCancelBookieTransferCashCid]
+  --     cashBalance = 1005.0
+  
+  -- -- Bob rejects Bookie's CashTransfer of $75 for Bob 
+  -- bobRejectBookieTransferToBobCashCid <- submit bob do 
+  --   exerciseCmd bookieTransferToBobCashCid Reject_Transfer
+
+  -- -- Bob creates CashTransfer of $95 for the Bookie 
+  -- bobCashTransferToBookieCid <- submit bob do 
+  --   exerciseCmd bobCashHoldingAcct CreateTransfer with 
+  --     recipient = bookie 
+  --     amount = 95.00
+  --     cashIds = [bobCash]
+  --     cashBalance = 100.0 
+  
+  -- -- Bookie accepts Bob's CashTransfer of $95 for Bookie
+  -- bookieAcceptsCashTransferFromBookieCid <- submit bookie do 
+  --   exerciseCmd bobCashTransferToBookieCid Accept_Transfer
+
+  -- test abort/cancel 
+  -- Bob creates CashTransfer of $100 for the Bookie 
+  -- bobCashTransferToBookieCid <- submit bob do 
+  --   exerciseCmd bobCashHoldingAcct CreateTransfer with 
+  --     recipient = bookie 
+  --     amount = 100.00
+  --     cashIds = [bobCash]
+  --     cashBalance = 5.00
+
+  -- -- Bookie cancels CashTransfer of $100 
+  -- bookieRejectsCashTransfer <- submit bookie do 
+  -- exerciseCmd bobCashTransferToBookieCid Cancel_Transfer
+
+
+  return()
+
