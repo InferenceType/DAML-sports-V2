@@ -66,9 +66,11 @@ template BettingAccount
         -- Fetch event payload and get participants to ensure predictedWinner is partaking in the event
         eventPayload <- fetch event
         currentTime <- getTime
+
         -- Ensure currentTime < eventStartTime & currentDate <= eventDate 
-        assertMsg "The time to place a bet on this event is closed because the event has started. Please review your bet." $ 
-          (currentTime < eventPayload.eventRecord.eventStartTime) 
+        -- assertMsg "The time to place a bet on this event is closed because the event has started. Please review your bet." $ 
+        --   (currentTime < eventPayload.eventRecord.eventStartTime) 
+        
         -- Ensure predictedWinner is part of event 
         assertMsg "The Participant that you have chosen to win is not part of this event. Please select an eligible participant." $ 
           (predictedWinner `elem` (DA.Internal.Record.getField @"participants" eventPayload.eventRecord))
@@ -119,8 +121,8 @@ template BettingAccount
             -- Get the payout amt
             payoutAmt  = betPayload.betType.wager * payoutRate
           
-          assertMsg "Payout phase must occur at least one day following the event. Please check back..." $ 
-            (nowDate > eventPayload.eventRecord.eventDate)
+          -- assertMsg "Payout phase must occur at least one day following the event. Please check back..." $ 
+          --   (nowDate > eventPayload.eventRecord.eventDate)
 
           -- Create Cash transfer from bookie to gambler who has won the bet
           cashBalance <- validateTxInputs cashIds cashHoldingAccountId $ payoutAmt
