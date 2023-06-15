@@ -1,4 +1,4 @@
-sdk-version: 2.7.0-snapshot.20230331.11634.0.c20fc05d
+sdk-version: 2.6.1
 name: DAML-sports-V2
 version: 0.1.0
 source: daml
@@ -13,3 +13,7 @@ codegen:
     npm-scope: daml.js
 # Remove this line when running against a ledger without user management.
 init-script: Setup:setup
+
+
+
+
